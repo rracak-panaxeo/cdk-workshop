@@ -1,31 +1,52 @@
 
-const { DynamoDB, Lambda } = require('aws-sdk');
-// TODO: CommonJS module syntax, change to ES6 module syntax
+const { DynamoDBClient, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
+const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 
 exports.handler = async function (event) {
-    console.log("request:", JSON.stringify(event, undefined, 2));
-
     // initialize DynamoDB client
-    const dynamodb = new DynamoDB();
+    const dynamodb = new DynamoDBClient({});
     // initialize Lambda client
-    const lambda = new Lambda();
+    const lambda = new LambdaClient({});
 
-    // update dynamoDB entry for "path" with hits++
-    await dynamodb.updateItem({
-        TableName: process.env.HITS_TABLE_NAME,
-        Key: { path: { S: event.path } },
-        UpdateExpression: 'ADD hits :incr',
-        ExpressionAttributeValues: { ':incr': { N: '1' } }
-    }).promise();
+    try {
+        // update dynamoDB entry for 'path' with hits++
+        await dynamodb.send(new UpdateItemCommand({
+            TableName: process.env.HITS_TABLE_NAME,
+            Key: { path: { S: event.path } },
+            UpdateExpression: 'ADD hits :incr',
+            ExpressionAttributeValues: { ':incr': { N: '1' } }
+        }));
+    } catch (error) {
+        console.error("Error updating DynamoDB", error);
+        throw error;
+    }
 
-    const resp = await lambda.invoke({
-        FunctionName: process.env.DOWNSTREAM_FUNCTION_NAME,
-        Payload: JSON.stringify(event)
-    }).promise();
+    let Payload;
+    try {
+        const command = new InvokeCommand({
+            FunctionName: process.env.DOWNSTREAM_FUNCTION_NAME,
+            Payload: JSON.stringify(event),
+        });
+        ({ Payload } = await lambda.send(command));
+    } catch (error) {
+        console.error("Error invoking Lambda function", error);
+        throw error;
+    }
 
-    console.log('downstream response:', JSON.stringify(resp, undefined, 2));
-    console.log('resp payload:', resp.Payload);
+    // Check if Payload exists before parsing
+    if (Payload) {
+        // Convert the base64 Payload to a Buffer
+        const payloadBuffer = Buffer.from(Payload, "base64");
 
-    // return response back to upstream caller
-    return JSON.parse(resp.Payload);
+        // Convert the Buffer to a string
+        const payloadString = payloadBuffer.toString();
+
+        // Parse the string into a JSON object
+        const payloadJson = JSON.parse(payloadString);
+
+        return payloadJson;
+    } else {
+        console.error("No payload received from Lambda function");
+        throw new Error("No payload received from Lambda function");
+    }
 }
