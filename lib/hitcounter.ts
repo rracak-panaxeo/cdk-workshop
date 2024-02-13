@@ -5,6 +5,14 @@ import * as cdk from 'aws-cdk-lib';
 
 export interface HitCounterProps {
     downstream: lambda.IFunction;
+    /**
+   * The read capacity units for the table
+   *
+   * Must be greater than 5 and lower than 20
+   *
+   * @default 5
+   */
+    readCapacity?: number;
 }
 
 export class HitCounter extends Construct {
@@ -12,12 +20,18 @@ export class HitCounter extends Construct {
     public readonly hitsTable: dynamodb.Table; // this is a property of the HitCounter class, not the handler function. This is because the table needs to be created before the handler function is created. This is a limitation of CDK. We can't create the table and the handler function in the same CDK
 
     constructor(scope: Construct, id: string, props: HitCounterProps) {
+        if (props.readCapacity !== undefined && (props.readCapacity < 5 || props.readCapacity > 20)) {
+            throw new Error('readCapacity must be greater than 5 and less than 20');
+        }
+
         super(scope, id);
 
         // DynamoDB table with path as the partition key
         this.hitsTable = new dynamodb.Table(this, 'Hits', {
             partitionKey: { name: 'path', type: dynamodb.AttributeType.STRING },
-            removalPolicy: cdk.RemovalPolicy.DESTROY // this is to make sure that the table is destroyed when the stack is destroyed. This is useful for development and testing, but not for production.
+            removalPolicy: cdk.RemovalPolicy.DESTROY, // this is to make sure that the table is destroyed when the stack is destroyed. This is useful for development and testing, but not for production.
+            encryption: dynamodb.TableEncryption.AWS_MANAGED,
+            readCapacity: props.readCapacity ?? 5
         })
 
         // Lambda function which is bound to the lambda/hitcounter.handler code.
@@ -36,5 +50,5 @@ export class HitCounter extends Construct {
 
         // grant the lambda role invoke permissions to the downstream function
         props.downstream.grantInvoke(this.handler);
-    }       
+    }
 }
