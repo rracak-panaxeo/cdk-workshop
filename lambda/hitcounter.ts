@@ -2,7 +2,7 @@
 const { DynamoDBClient, UpdateItemCommand } = require('@aws-sdk/client-dynamodb');
 const { LambdaClient, InvokeCommand } = require('@aws-sdk/client-lambda');
 
-exports.handler = async function (event) {
+exports.handler = async function (event: any) {
     // initialize DynamoDB client
     const dynamodb = new DynamoDBClient({});
     // initialize Lambda client
